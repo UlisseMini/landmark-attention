@@ -16,8 +16,8 @@ def landmark_softmax(
     attn_scores: AttentionScores,
     window_len: int,
 ):
-    assert attn_scores.size(-1) == attn_scores.size(-2)
-    assert attn_scores.size(-1) % window_len == 0
+    assert attn_scores.size(-1) == attn_scores.size(-2), f"attn_scores.shape {attn_scores.shape} isn't square"
+    assert attn_scores.size(-1) % window_len == 0, f"seq_len {attn_scores.size(-1)} not divisible by {window_len} (window_len)"
     seq_len = attn_scores.shape[-1]
     num_groups = seq_len // window_len
 
