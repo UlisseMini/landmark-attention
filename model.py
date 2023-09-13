@@ -72,6 +72,7 @@ if __name__ == '__main__':
 # %%
 
 
+# TODO: This should be in landmark.py (or landmark.py should be here!)
 class LandmarkRotaryEmbedding(nn.Module):
     def __init__(self, dim, max_position_embeddings, base=10000, device=None):
         super().__init__()
@@ -120,26 +121,27 @@ if __name__ == '__main__':
 
 # TODO: Define a modified tokenizer or modify the existing one or something. Having a separate
 # function you *must use* is cursed.
-def tokenize(texts: List[str], window_len: int):
+def tokenize(texts: List[str], window_len: int, tokenizer: AutoTokenizer=None):
     """
     huggingface tokenizers are impossible to customize. I tried modifying
     post_processor but it couldn't be done easily for FastTokenizer
     """
     inputs = tokenizer(texts, add_special_tokens=True, padding=True, pad_to_multiple_of=window_len)
+    wl = window_len
 
     # add landmark tokens, one every window_len
     for l, a in zip(inputs['input_ids'], inputs['attention_mask']):
-        assert len(l) % window_len == 0, f'len(l) % window_len'
+        assert len(l) % window_len == 0, f'len(l) % window_len = {len(l) % window_len}'
 
         for i in range(window_len-1, len(l), window_len):
             l.insert(i, tokenizer.sep_token_id)
             a.insert(i, 1)
 
         # pad to multiple of window_len
-        l[:] = l + [tokenizer.pad_token_id] * ((6 - len(a) % 6) % 6)
-        a[:] = a + [0] * ((6 - len(a) % 6) % 6)
+        l[:] = l + [tokenizer.pad_token_id] * ((wl - len(a) % wl) % wl)
+        a[:] = a + [0] * ((wl - len(a) % wl) % wl)
 
-        assert len(l) % window_len == 0, 'len(l) % window_len (2)'
+        assert len(l) % wl == 0, f'len(l) % window_len = {len(l) % wl}'
 
         # truncate l and a to multiple of window_len (bad)
         # l[:] = l[:len(l) - len(l) % window_len]
@@ -152,20 +154,24 @@ def tokenize(texts: List[str], window_len: int):
 
 
 if __name__ == '__main__':
-    window_len = 6
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
     tokenizer.pad_token_id = tokenizer.eos_token_id
     tokenizer.add_special_tokens({'sep_token': '[LANDMARK]'})
 
-    tokenize(["foo bar baz qux quux corge grault garply waldo fred plugh xyzzy thud"], 6)
+    window_len = 6
+    tokenize = partial(tokenize, window_len=window_len, tokenizer=tokenizer)
 
-    assert tokenize(["foo"], window_len)['attention_mask'][0, :window_len].tolist() == [1, 0, 0, 0, 0, 1]
+    tokenize(["83-->16\n"])
+
+    tokenize(["foo bar baz qux quux corge grault garply waldo fred plugh xyzzy thud"])
+
+    assert tokenize(["foo"])['attention_mask'][0, :window_len].tolist() == [1, 0, 0, 0, 0, 1]
     # TODO: make work / remove unnecessary padding in tokenize.
-    # assert tokenize(["foo"], 6)['attention_mask'] == [[1, 0, 0, 0, 0, 1]]
+    # assert tokenize(["foo"])['attention_mask'] == [[1, 0, 0, 0, 0, 1]]
 
     texts = ["Hello, my dog is cute and my cat is also cute.", "Hello, I like apples and bannanas"]
     # really we want to pad to multiple of window len + 1 for labels. but instead we have do this hack.
-    inputs = tokenize(texts, window_len)
+    inputs = tokenize(texts)
     for k in range(len(texts)):
         end = len(inputs['input_ids'][k]) - window_len # TODO: fix extra padding (see above)
         assert all(inputs['input_ids'][k, i].item() == tokenizer.sep_token_id for i in range(window_len-1, end, window_len))
