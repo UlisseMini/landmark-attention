@@ -8,18 +8,12 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
 from tqdm import tqdm
 from model import PythiaLandmark, tokenize
-from typing import List
+from typing import List, Tuple, Callable, Optional
 from functools import partial
 import torch.nn.functional as F
+import os
 
 torch.random.manual_seed(0)
-
-# Train on algorithmic datase. Full plan:
-#   - existing dataset, tokenize and add landmarks manually. eq. spacing.
-#   - slice resulting logits to grab predictions. do cross entropy on correct ones,
-#     correct values can be obtained by the randperm indexing we use to create the test examples
-#   - create attention mask manually (shouldn't be that hard)
-#      - set attention mask to exclude information movement between testcases (unnecessary, but could be added)
 
 # %%
 # Hyperparameters
@@ -32,7 +26,6 @@ landmark_every = 4 # how many key -> val pairs for each landmark
 window_len = 4 * landmark_every
 n_pairs = 4*window_len # multiple of window_len required for now. easier to code
 
-# Generate dataset
 
 # %%
 
@@ -102,19 +95,18 @@ def generate_dataset():
 
 # %%
 
-batch_size = 20
+batch_size = 64
 
-for i in tqdm(range(1000)):
+for i in tqdm(range(100000)):
     if (i+1) % batch_size == 0:
         optim.step()
         optim.zero_grad()
     
     context, ctx_val_idx, val_labels = generate_dataset()
+    # context, ctx_val_idx, val_labels = context.to('mps'), ctx_val_idx.to('mps'), val_labels.to('mps')
 
-    # run model on trainctx + trainpred and extract logits for values
-    # could just zero out logits for the token before ->, that would remove unpredictable / essential randomness...
-    # I could also just train on ess randomness and see what happens. I need to track accuracy though...
-    # TODO: Attention mask
+    # TODO: set attention mask to exclude information movement between testcases,
+    # could avoid weirdness with process of elimination strategies.
     output = model(context)
 
     # model output shifts everything right by one bc we're predicting.
@@ -126,8 +118,43 @@ for i in tqdm(range(1000)):
     loss = token_loss[:, ctx_val_idx-1].mean()
     loss.backward()
 
-    if i % 10 == 0:
+    if (i+1) % batch_size == 0:
         val_predictions = torch.argmax(output.logits[:, ctx_val_idx-1], -1)
         accuracy = (val_predictions == token_ids[None, val_labels]).float().mean()
 
         tqdm.write(f'loss: {loss} accuracy {accuracy}')
+
+
+# %%
+
+if not os.path.exists('algo-model.pt'):
+    torch.save(model.state_dict(), 'algo-model.pt')
+    torch.save(optim.state_dict(), 'algo-optim.pt')
+
+# %%
+# Interpret the model
+
+model.load_state_dict(torch.load('algo-model.pt'))
+
+# %%
+# Test that we're actually using the previous context
+
+context, ctx_val_idx, val_labels = generate_dataset()
+context2, ctx_val_idx2, val_labels2 = generate_dataset()
+context[:, :4*n_pairs] = context2[:, :4*n_pairs]
+
+output = model(context)
+val_predictions = torch.argmax(output.logits[:, ctx_val_idx-1], -1)
+accuracy = (val_predictions == token_ids[None, val_labels]).float().mean()
+print('should be low:', accuracy)
+
+# predictions for swapped in context should be high
+# TODO: Figure out why this is low & fix. model may be attending to other tokens in the
+# prediction part of the context & doing process of elimination or something weird...
+val_predictions = torch.argmax(output.logits[:, ctx_val_idx2-1], -1)
+accuracy = (val_predictions == token_ids[None, val_labels2]).float().mean()
+print('should be high:', accuracy)
+
+# %%
+# TODO: More ablation studies. Make utilities so I can easily swap e.g. one key in the past context
+# and see how this changes logits for the corresponding prediction value.
