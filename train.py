@@ -19,7 +19,7 @@ torch.random.manual_seed(0)
 # Hyperparameters
 
 MODEL_NAME = 'EleutherAI/pythia-14m'
-device = 'mps'
+device = 'cpu' # FIXME: Debug loss spikes on mps
 
 assert 'pythia' in MODEL_NAME, 'only pythia tokenizer has the first 128 tokens as ascii'
 token_ids = torch.arange(2, 96)
@@ -86,7 +86,7 @@ for i in tqdm(range(10000)):
     optim.zero_grad()
     
     context, ctx_val_idx, val_labels = generate_dataset(token_ids=token_ids, bs=batch_size)
-    context, ctx_val_idx, val_labels = context.to('mps'), ctx_val_idx.to('mps'), val_labels.to('mps')
+    context, ctx_val_idx, val_labels = context.to(device), ctx_val_idx.to(device), val_labels.to(device)
 
     # TODO: set attention mask to exclude information movement between testcases,
     # could avoid weirdness with process of elimination strategies.
