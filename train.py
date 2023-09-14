@@ -149,11 +149,10 @@ accuracy = (val_predictions == token_ids[None, val_labels]).float().mean()
 print('should be low:', accuracy)
 
 # predictions for swapped in context should be high
-# TODO: Figure out why this is low & fix. model may be attending to other tokens in the
-# prediction part of the context & doing process of elimination or something weird...
-val_predictions = torch.argmax(output.logits[:, ctx_val_idx2-1], -1)
-accuracy = (val_predictions == token_ids[None, val_labels2]).float().mean()
-print('should be high:', accuracy)
+# TODO: Fix this. requires key-matching the in-common keys and ignoring others.
+# val_predictions = torch.argmax(output.logits[:, ctx_val_idx2-1], -1)
+# accuracy = (val_predictions == token_ids[None, val_labels2]).float().mean()
+# print('should be high:', accuracy)
 
 # %%
 # TODO: More ablation studies. Make utilities so I can easily swap e.g. one key in the past context
