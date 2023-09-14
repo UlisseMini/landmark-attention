@@ -105,7 +105,7 @@ class LandmarkRotaryEmbedding(nn.Module):
         if seq_len > self.max_seq_len_cached:
             window_len = self.max_seq_len_cached
             # modify seq_len to cycle every window_len, thus it never exceeds max_seq_len_cached
-            t = torch.arange(1, seq_len+1, device=x.device) % window_len
+            t = torch.arange(1, seq_len+1, device=self.cos_cached.device) % window_len
             return self.cos_cached[:, :, t, ...].to(x.device), self.sin_cached[:, :, t, ...].to(x.device)
 
             

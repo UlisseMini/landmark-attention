@@ -20,10 +20,11 @@ def landmark_softmax(
     assert attn_scores.size(-1) % window_len == 0, f"seq_len {attn_scores.size(-1)} not divisible by {window_len} (window_len)"
     seq_len = attn_scores.shape[-1]
     num_groups = seq_len // window_len
+    dev = attn_scores.device
 
     # setup masks & constants
-    same = torch.arange(seq_len)//window_len == torch.arange(seq_len).unsqueeze(1)//window_len
-    landmark = (torch.arange(seq_len) % window_len == window_len-1).repeat(seq_len).reshape(seq_len, seq_len)
+    same = (torch.arange(seq_len)//window_len == torch.arange(seq_len).unsqueeze(1)//window_len).to(dev)
+    landmark = ((torch.arange(seq_len) % window_len == window_len-1).repeat(seq_len).reshape(seq_len, seq_len)).to(dev)
     normal, other = ~landmark, ~same
     min_val = torch.finfo(attn_scores.dtype).min
 
