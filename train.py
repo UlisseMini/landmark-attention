@@ -40,7 +40,7 @@ tokenizer.add_special_tokens({'sep_token': '[LANDMARK]'})
 model = PythiaLandmark(model=base_model)
 model.to(device)
 tokenize = partial(tokenize, window_len=window_len, tokenizer=tokenizer)
-optim = torch.optim.Adam(model.parameters(), lr=1e-4)
+optim = torch.optim.Adam(model.parameters(), lr=1e-5)
 
 # %%
 
