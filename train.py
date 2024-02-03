@@ -12,14 +12,19 @@ from typing import List, Tuple, Callable, Optional
 from functools import partial
 import torch.nn.functional as F
 import os
+import wandb
 
 torch.random.manual_seed(0)
+
+# %%
+
+run = wandb.init(project="landmark-attention")
 
 # %%
 # Hyperparameters
 
 MODEL_NAME = 'EleutherAI/pythia-14m'
-device = 'cpu' # FIXME: Debug loss spikes on mps
+device = 'cuda' # FIXME: Debug loss spikes on mps
 
 assert 'pythia' in MODEL_NAME, 'only pythia tokenizer has the first 128 tokens as ascii'
 token_ids = torch.arange(2, 96)
@@ -39,6 +44,8 @@ base_model.config.update({"max_position_embeddings": window_len})
 tokenizer.add_special_tokens({'sep_token': '[LANDMARK]'})
 model = PythiaLandmark(model=base_model)
 model.to(device)
+model = torch.nn.DataParallel(model, device_ids=[0,1,2,3])
+
 tokenize = partial(tokenize, window_len=window_len, tokenizer=tokenizer)
 optim = torch.optim.Adam(model.parameters(), lr=1e-5)
 
@@ -79,9 +86,10 @@ def generate_dataset(token_ids, bs: int = 1):
 
     return (context.long(), context_val_idx, vals_idx.gather(-1, kv_perm))
 
+
 # %%
 
-batch_size = 64
+batch_size = 32
 for i in tqdm(range(10000)):
     optim.zero_grad()
     
@@ -105,7 +113,8 @@ for i in tqdm(range(10000)):
     # show loss & acc stuff
     val_predictions = torch.argmax(output.logits[:, ctx_val_idx-1], -1)
     accuracy = (val_predictions == token_ids.to(device)[None, val_labels]).float().mean()
-    tqdm.write(f'loss: {loss} accuracy {accuracy}')
+    # tqdm.write(f'loss: {loss} accuracy {accuracy}')
+    wandb.log({'loss': loss.item(), 'accuracy': accuracy.item()})
 
 
 # %%
@@ -122,14 +131,20 @@ model.load_state_dict(torch.load('algo-model.pt'))
 # %%
 # Test that we're actually using the previous context
 
-context, ctx_val_idx, val_labels = generate_dataset()
-context2, ctx_val_idx2, val_labels2 = generate_dataset()
+# Unwrap the model from DataParallel (for testing)
+model = model.module.to('cpu')
+
+# %%
+
+context, ctx_val_idx, val_labels = generate_dataset(token_ids=token_ids, bs=1)
+context2, ctx_val_idx2, val_labels2 = generate_dataset(token_ids=token_ids, bs=1)
 context[:, :4*n_pairs] = context2[:, :4*n_pairs]
 
 output = model(context)
-val_predictions = torch.argmax(output.logits[:, ctx_val_idx-1], -1)
+val_predictions = torch.argmax(output.logits[:, ctx_val_idx-1], -1).cpu()
 accuracy = (val_predictions == token_ids[None, val_labels]).float().mean()
 print('should be low:', accuracy)
 
 # predictions for swapped in context should be high
 # TODO: To implement this requires key-matching the in-common keys and ignoring others.
+# %%
